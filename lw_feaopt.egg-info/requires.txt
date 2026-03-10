@@ -1,0 +1,12 @@
+numpy>=1.22
+scipy>=1.8
+
+[all]
+matplotlib>=3.5
+scikit-image>=0.19
+
+[export]
+scikit-image>=0.19
+
+[plot]
+matplotlib>=3.5
