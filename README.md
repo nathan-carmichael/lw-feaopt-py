@@ -1,6 +1,6 @@
-# ShepherdLab LW FEA-OPT
+# ShepherdLab LW FEA-OPT (Python)
 
-A lightweight, pure-MATLAB toolkit for **finite element analysis** and **stress-ratio thickness optimisation** of 2-D frame and truss structures. Designed to be readable, hackable, and easy to extend.
+A lightweight, pure-Python toolkit for **finite element analysis** and **stress-ratio thickness optimisation** of 2-D frame and truss structures. Ported from the original MATLAB implementation, designed to be readable, hackable, and easy to extend.
 
 ## Features
 
@@ -13,184 +13,207 @@ A lightweight, pure-MATLAB toolkit for **finite element analysis** and **stress-
 - **Visualisation** with physically-scaled beam thickness rendering
 - **Rigid element support** via stiffness penalty method
 - **Stress post-processing** — axial, bending, shear, von Mises, and factor of safety
+- **Vectorised internals** — NumPy/SciPy throughout for performance
 
 ## Quick Start
 
-```matlab
-% 1. Add LW FEA-OPT to the MATLAB path
-run('setup.m')
+```bash
+# 1. Install dependencies
+pip install numpy scipy matplotlib scikit-image
 
-% 2. Run an included demo
-demo_beam_optimization      % curved beam from IGS file
-demo_truss_optimization     % Warren truss with subdivision
+# 2. Run an included demo
+python examples/demo_beam.py       # curved beam from IGS file
+python examples/demo_truss.py      # Warren truss with subdivision
 ```
+
+## Requirements
+
+- Python 3.9 or later
+- **NumPy** and **SciPy** — core numerical computation and sparse linear algebra
+- **matplotlib** — visualisation (optional but recommended)
+- **scikit-image** — required for profile export (rasterisation, morphological operations, contour tracing)
 
 ## Project Layout
 
 ```
-lw-feaopt/
-├── .gitignore
+lw-feaopt-py/
 ├── README.md
 ├── LICENSE
-├── setup.m
 │
-├── src/
-│   ├── StructureGeometry.m
-│   ├── ElementMatrices.m
-│   ├── AnalysisState.m
-│   ├── FEAAnalysis.m
-│   ├── LoadCase.m
-│   ├── StructurePlotter.m
-│   ├── optimizeThickness.m
-│   └── subdivideTruss.m
-│
-├── io/
-│   ├── importCSVCurve.m
-│   ├── importIGSCurve.m
-│   └── exportProfile.m
+├── feaopt/
+│   ├── __init__.py
+│   ├── structure_geometry.py
+│   ├── element_matrices.py
+│   ├── analysis_state.py
+│   ├── fea_analysis.py
+│   ├── load_case.py
+│   ├── structure_plotter.py
+│   ├── optimize_thickness.py
+│   ├── subdivide_truss.py
+│   ├── importers.py
+│   └── export_profile.py
 │
 ├── examples/
-│   ├── demo_beam_optimization.m
-│   └── demo_truss_optimization.m
+│   ├── demo_beam.py
+│   └── demo_truss.py
 │
 ├── profiles/
-│   └── .gitkeep          
+│   └── .gitkeep
 │
 └── docs/
     ├── main.tex
     └── chapters/
-        ├── ch1_introduction.tex
-        ├── ch2_theory.tex
-        ├── ch3_api_reference.tex
-        ├── ch4_examples.tex
-        ├── ch5_export.tex
-        └── app_a_file_listing.tex
 ```
 
 ## Usage
 
 ### Define a structure
 
-```matlab
-nodes = [0 0; 1 0; 2 0; 2 1];
-conn  = [1 2; 2 3; 3 4];
+```python
+import numpy as np
+from feaopt import StructureGeometry, FEAAnalysis, LoadCase
 
-props = struct( ...
-    'E',         200e9, ...       % Young's modulus (Pa)
-    'thickness', 0.005, ...       % element thickness (m)
-    'width',     0.010, ...       % out-of-plane width (m)
-    'ultimate',  400e6, ...       % UTS (Pa)
-    'rho',       7850);           % density (kg/m^3)
+nodes = np.array([[0, 0], [0.1, 0], [0.2, 0], [0.2, 0.1]])
+conn = np.array([[0, 1], [1, 2], [2, 3]])  # 0-based indexing
 
-constraints = [1 1 0;   % node 1: ux = 0
-               1 2 0;   %         uy = 0
-               1 3 0];  %         theta = 0
+props = {
+    'E':         200e9,       # Young's modulus (Pa)
+    'thickness': 0.005,       # element thickness (m)
+    'width':     0.010,       # out-of-plane width (m)
+    'ultimate':  400e6,       # UTS (Pa)
+    'rho':       7850,        # density (kg/m³)
+}
 
-geom = StructureGeometry(nodes, conn, props, constraints);
+# Constraints: [node_id (0-based), dof (0=ux, 1=uy, 2=theta), value]
+constraints = np.array([
+    [0, 0, 0],   # node 0: ux = 0
+    [0, 1, 0],   #         uy = 0
+    [0, 2, 0],   #         theta = 0
+])
+
+geom = StructureGeometry(nodes, conn, props, constraints)
 ```
 
 ### Run analysis
 
-```matlab
-analysis = FEAAnalysis(geom);
+```python
+analysis = FEAAnalysis(geom)
 
-lc = LoadCase(geom);
-lc.addNodalLoad(4, 0, -5000, 0, 'Tip load');
-lc.setLoadFactor(1.0);
+lc = LoadCase(geom)
+lc.add_nodal_load(3, 0, -5000, 0, 'Tip load')  # node 3, Fy = -5 kN
+lc.set_load_factor(1.0)
 
-% Linear
-results = analysis.runLinearAnalysis(lc);
+# Linear
+results = analysis.run_linear_analysis(lc)
 
-% Nonlinear (5 load steps)
-results = analysis.solveLargeDeflection(lc, 5);
+# Nonlinear (5 load steps)
+results = analysis.solve_large_deflection(lc, 5)
 
-% Post-processing
-stress = analysis.performStressAnalysis();
-fprintf('Min FOS: %.2f\n', stress.FOS.min_FOS);
+# Post-processing
+stress = analysis.perform_stress_analysis()
+print(f"Min FOS: {stress['FOS']['min_FOS']:.2f}")
 ```
 
 ### Optimise thickness
 
-```matlab
-opt = struct('safety_factor', 2, 'alpha', 0.4, 'use_nonlinear', true);
-[geom, res] = optimizeThickness(geom, analysis, lc, opt);
-fprintf('Mass reduction: %.1f%%\n', res.mass_reduction);
+```python
+from feaopt import optimize_thickness
+
+opt_options = {
+    'safety_factor': 2,
+    'alpha': 0.4,
+    'use_nonlinear': True,
+}
+geom, res = optimize_thickness(geom, analysis, lc, opt_options)
+print(f"Mass reduction: {res['mass_reduction']:.1f}%")
 ```
 
 ### Truss subdivision & optimisation
 
-```matlab
-% Define a truss
-nodes = [0 0; 1 0; 2 0; 0.5 0.8; 1.5 0.8];
-conn  = [1 2; 2 3; 1 4; 4 2; 2 5; 5 3; 4 5];
+```python
+from feaopt import subdivide_truss, optimize_thickness, export_profile
 
-% Subdivide each member into 20 small frame elements
-[fine_nodes, fine_conn, member_map] = subdivideTruss(nodes, conn, 20);
+# Define a truss
+nodes = np.array([[0, 0], [0.1, 0], [0.2, 0], [0.05, 0.08], [0.15, 0.08]])
+conn = np.array([[0, 1], [1, 2], [0, 3], [3, 1], [1, 4], [4, 2], [3, 4]])
 
-% Build geometry, analyse, and optimise as usual
-geom = StructureGeometry(fine_nodes, fine_conn, props, constraints);
-analysis = FEAAnalysis(geom);
-results = analysis.runLinearAnalysis(lc);
-[geom, res] = optimizeThickness(geom, analysis, lc, opt);
+# Subdivide each member into 20 small frame elements
+fine_nodes, fine_conn, member_map = subdivide_truss(nodes, conn, 20)
 
-% Export with thin-element filtering (removes vanished material)
-profile = exportProfile(geom, struct('min_thickness_frac', 0.15, ...
-    'export_filename', 'profiles/truss'));
+# Build geometry, analyse, and optimise as usual
+geom = StructureGeometry(fine_nodes, fine_conn, props, constraints)
+analysis = FEAAnalysis(geom)
+results = analysis.run_linear_analysis(lc)
+geom, res = optimize_thickness(geom, analysis, lc, opt_options)
+
+# Export with thin-element filtering (removes vanished material)
+export_opts = {
+    'min_thickness_frac': 0.15,
+    'export_filename': 'profiles/truss',
+}
+profile = export_profile(geom, export_opts)
 ```
 
-The `min_thickness_frac` option excludes elements thinner than a fraction of the
-maximum, leaving only the structural load paths in the exported outline.
+The `min_thickness_frac` option excludes elements thinner than a fraction of the maximum, leaving only the structural load paths in the exported outline.
 
 ### Visualise
 
-```matlab
-plotter = StructurePlotter(geom, analysis);
-plotter.plotStructure();
-plotter.plotDeformedShape();
-plotter.plotStressDistribution('combined');
+```python
+from feaopt import StructurePlotter
+
+plotter = StructurePlotter(geom, analysis)
+plotter.draw_structure(ax)
+plotter.draw_stress(ax, stress_values=stress_mpa)
+plotter.plot_supports(ax)
+plotter.plot_loads(ax, lc)
 ```
 
 ### Import geometry from file
 
-```matlab
-% From CSV (x,y columns)
-result = importCSVCurve('curve.csv', struct('scale', 0.001, 'num_elements', 200));
+```python
+from feaopt import import_csv_curve, import_igs_curve
 
-% From IGES (e.g. SolidWorks sketch export)
-result = importIGSCurve('sketch.igs', struct('scale', 0.001, 'num_elements', 200));
+# From CSV (x,y columns)
+result = import_csv_curve('curve.csv', scale=0.001, num_elements=200)
 
-% Use the imported mesh
-geom = StructureGeometry(result.nodes, result.connectivity, props, constraints);
+# From IGES (e.g. SolidWorks sketch export)
+result = import_igs_curve('sketch.igs', scale=0.001, num_elements=200)
+
+# Use the imported mesh
+geom = StructureGeometry(result['nodes'], result['connectivity'], props, constraints)
 ```
 
 ### Export optimised profile for CAD
 
-```matlab
-% Rasterise the optimised structure, extract boundary loops, and export
-opts = struct('scale_to_mm', 1000, 'smoothing', 0.999999999, ...
-              'export_filename', 'profiles/my_part');
-profile = exportProfile(geom, opts);
+```python
+from feaopt import export_profile
 
-% For trusses: filter out near-zero-thickness elements first
-opts.min_thickness_frac = 0.15;
-profile = exportProfile(geom, opts);
+opts = {
+    'scale_to_mm': 1000,
+    'smoothing': 0.999999999,
+    'export_filename': 'profiles/my_part',
+}
+profile = export_profile(geom, opts)
 
-% Files created in profiles/ (one per boundary loop):
-%   my_part_loop_1.txt    — outer boundary spline (X Y Z)
-%   my_part_hole_2.txt    — inner hole spline (if any)
-%   my_part.mat           — full MATLAB data
+# For trusses: filter out near-zero-thickness elements first
+opts['min_thickness_frac'] = 0.15
+profile = export_profile(geom, opts)
 ```
 
-The exporter works by rasterising every element as a filled rectangle onto
-a binary image, then using `bwboundaries` to trace all closed contours.
-Each contour is spline-fitted and exported as a separate file. This handles
-any topology — beams, trusses, branching, and structures with holes.
+Files created in `profiles/` (one per boundary loop):
+- `my_part_loop_0.txt` — outer boundary spline (X Y Z)
+- `my_part_hole_1.txt` — inner hole spline (if any)
+- `my_part.npz` — full NumPy data archive
+
+The exporter works by rasterising every element as a filled rectangle onto a binary image, then using scikit-image's `find_contours` to trace all closed contours. Each contour is spline-fitted and exported as a separate file. This handles any topology — beams, trusses, branching, and structures with holes.
+
+> **Performance note:** For small geometries, the default `resolution` of 50,000 pixels/m may produce a very small image. Increase it (e.g. to 500,000) for finer detail. For large geometries, the morphological closing disk radius can become expensive; it is automatically capped for performance.
 
 ## Analysis Methods
 
 ### Linear
 
-Standard direct stiffness method: assembles the global stiffness matrix, partitions by free/fixed DOFs, and solves `K_ff * u_f = P_f`.
+Standard direct stiffness method: assembles the global stiffness matrix as a SciPy sparse matrix, partitions by free/fixed DOFs, and solves with `scipy.sparse.linalg.spsolve`.
 
 ### Nonlinear (Newton-Raphson)
 
@@ -198,8 +221,8 @@ Incremental load stepping with Newton-Raphson iterations at each step. At every 
 
 1. Updates element geometry (lengths, orientations) from current displacements
 2. Assembles the tangent stiffness matrix
-3. Computes internal forces and the residual `R = F_ext - F_int`
-4. Solves for a displacement increment `K_t * du = R`
+3. Computes internal forces and the residual R = F_ext − F_int
+4. Solves for a displacement increment K_t · du = R
 5. Checks force, displacement, and energy convergence criteria
 
 ### Thickness Optimisation
@@ -212,11 +235,14 @@ t_new = t_old * (sigma / sigma_allow)^alpha
 
 where `alpha` controls aggressiveness (default 0.4). Move limits and absolute bounds prevent oscillation and ensure manufacturability.
 
-## Requirements
+## Differences from MATLAB Version
 
-- MATLAB R2019b or later
-- **Image Processing Toolbox** — required for profile export (`bwboundaries`, `poly2mask`, `imclose`)
-- Curve Fitting Toolbox — optional, enables `csaps` smoothing (falls back to `pchip` interpolation)
+- **0-based indexing** — node IDs, element IDs, DOF indices, and constraint definitions all use 0-based indexing.
+- **Dicts instead of structs** — results, options, and imported data are returned as Python dicts rather than MATLAB structs.
+- **Sparse assembly** — the global stiffness matrix is assembled as a `scipy.sparse.csr_matrix` using vectorised index operations.
+- **Vectorised element operations** — stiffness matrices, transformations, internal forces, and stress recovery are computed for all elements simultaneously using NumPy broadcasting and `einsum`.
+- **scikit-image for export** — profile export uses `skimage.draw.polygon`, `skimage.morphology.closing`, and `skimage.measure.find_contours` in place of MATLAB's Image Processing Toolbox functions.
+- **NumPy archive for export** — exported data is saved as `.npz` files rather than `.mat` files.
 
 ## License
 
