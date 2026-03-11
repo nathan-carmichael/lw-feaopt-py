@@ -1,0 +1,1 @@
+Profiles will be stored as matlab files and text files. I recommend importing all of the individual splines as individual curves, converting the entities, and then adding to that sketch. You can import them into Solidworks using "Curve Through XYZ Points"
