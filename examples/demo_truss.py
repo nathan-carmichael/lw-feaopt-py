@@ -2,32 +2,15 @@
 demo_truss_optimization.py — Simple overhanging truss with end moment.
 
 Port of demo_truss_optimization.m — with full MATLAB-style plotting.
-INSTRUMENTED VERSION — timing throughout to find bottleneck.
 """
 
 import numpy as np
 import os
 import time
 
-TIMINGS = []
-
-def tick(label):
-    TIMINGS.append((label, time.perf_counter()))
-
-def print_timings():
-    print(f"\n{'='*60}")
-    print(f"  TIMING BREAKDOWN")
-    print(f"{'='*60}")
-    for i in range(1, len(TIMINGS)):
-        dt = TIMINGS[i][1] - TIMINGS[i-1][1]
-        flag = " <<<< SLOW" if dt > 1.0 else ""
-        print(f"  {TIMINGS[i-1][0]:<45} {dt:8.2f}s{flag}")
-    total = TIMINGS[-1][1] - TIMINGS[0][1]
-    print(f"  {'─'*55}")
-    print(f"  {'TOTAL':<45} {total:8.2f}s")
-    print(f"{'='*60}\n")
-
-tick("START")
+from feaopt import (StructureGeometry, FEAAnalysis, LoadCase,
+                    optimize_thickness, export_profile,
+                    subdivide_truss)
 
 try:
     import matplotlib
@@ -38,18 +21,8 @@ try:
 except ImportError:
     HAS_MPL = False
 
-tick("matplotlib import")
-
-from feaopt import (StructureGeometry, FEAAnalysis, LoadCase,
-                    optimize_thickness, export_profile,
-                    subdivide_truss)
-
-tick("feaopt import")
-
 if HAS_MPL:
     from feaopt import StructurePlotter
-
-tick("StructurePlotter import")
 
 
 def main():
@@ -72,8 +45,6 @@ def main():
     Fy_tip = -3000
 
     num_sub = 50
-
-    tick("parameters defined")
 
     # ==================== BUILD TRUSS ====================
     n_bot = n_bays + 1
@@ -117,16 +88,12 @@ def main():
     print(f"  Pin: node {pin_node}  |  Fixed: node {roller_node}")
     print(f"  Tip: node {tip_node}")
 
-    tick("truss built")
-
     # ==================== SUBDIVIDE ====================
     print(f"\n=== Subdividing ({num_sub} sub-elements per member) ===")
     sub_nodes, sub_conn, member_map = subdivide_truss(truss_nodes, conn, num_sub)
     num_nodes = sub_nodes.shape[0]
     num_elements = sub_conn.shape[0]
     print(f"  Nodes: {num_nodes},  Elements: {num_elements}")
-
-    tick("subdivide")
 
     # ==================== FEA SETUP ====================
     props = {
@@ -143,15 +110,8 @@ def main():
         [roller_node, 0, 0], [roller_node, 1, 0], [roller_node, 2, 0],
     ])
 
-    tick("props/constraints defined")
-
     geometry = StructureGeometry(sub_nodes, sub_conn, props, constraints)
-
-    tick("StructureGeometry created")
-
     analysis = FEAAnalysis(geometry, verbose=False)
-
-    tick("FEAAnalysis created")
 
     load_case = LoadCase(geometry)
     load_case.add_nodal_load(tip_node, 0, Fy_tip, M_tip, 'Tip force + moment')
@@ -160,18 +120,10 @@ def main():
     print(f"\n=== Loading ===")
     print(f"  Fy = {Fy_tip:.0f} N,  Mz = {M_tip:.0f} Nm  at node {tip_node}")
 
-    tick("load case set up")
-
     # ==================== INITIAL ANALYSIS ====================
     print(f"\n=== Initial Analysis ===")
     lin_results = analysis.run_linear_analysis(load_case)
-
-    tick("linear analysis")
-
     lin_stress = analysis.perform_stress_analysis()
-
-    tick("stress analysis")
-
     print(f"  Max disp: {lin_results['max_displacement']*1e3:.4f} mm  |  "
           f"FOS: {lin_stress['FOS']['min_FOS']:.2f}  |  "
           f"Max stress: {lin_stress['stresses']['max_von_mises']/1e6:.1f} MPa")
@@ -185,8 +137,6 @@ def main():
     nl_deformed = analysis.get_deformed_coordinates(1)
     nl_stress = lin_stress
 
-    tick("initial state saved")
-
     # ==================== OPTIMISE ====================
     print(f"\n=== Thickness Optimisation ===")
 
@@ -199,29 +149,16 @@ def main():
     optimized_geom, opt_results = optimize_thickness(
         geometry, analysis, load_case, opt_options)
 
-    tick("thickness optimisation")
-
     # ==================== POST-OPTIMISATION ====================
     analysis_opt = FEAAnalysis(optimized_geom, verbose=False)
-
-    tick("post-opt FEAAnalysis created")
-
     opt_final = analysis_opt.run_linear_analysis(load_case)
-
-    tick("post-opt linear analysis")
-
     opt_stress = analysis_opt.perform_stress_analysis()
-
-    tick("post-opt stress analysis")
-
     opt_deformed = analysis_opt.get_deformed_coordinates(1)
 
     print(f"\n  Post-optimisation:")
     print(f"    Max disp: {opt_final['max_displacement']*1e3:.4f} mm  |  "
           f"FOS: {opt_stress['FOS']['min_FOS']:.2f}  |  "
           f"Max stress: {opt_stress['stresses']['max_von_mises']/1e6:.1f} MPa")
-
-    tick("post-opt deformed coords")
 
     # ==================== EXPORT ====================
     print(f"\n=== Exporting Profile ===")
@@ -236,35 +173,24 @@ def main():
 
     profile = export_profile(optimized_geom, export_opts)
 
-    tick("export_profile")
-
     elapsed = time.time() - t_start
     print(f"\n  Total time: {elapsed:.2f} s")
 
     # ==================== PLOTTING (MATLAB-style) ====================
     if not HAS_MPL:
-        print_timings()
         return
-
-    tick("plotting start")
 
     cmap = cm.jet
 
     plotter_init = StructurePlotter(geometry, analysis)
     plotter_opt = StructurePlotter(optimized_geom, analysis_opt)
 
-    tick("StructurePlotters created")
-
     from feaopt.structure_plotter import draw_beams_batch, draw_beams_stress
-
-    tick("draw functions imported")
 
     # ===== FIGURE: Initial + Optimised side by side =====
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
     fig.suptitle('Simple Overhanging Truss — Before & After',
                  fontsize=13, fontweight='bold')
-
-    tick("fig created")
 
     # -- Top-left: Initial deflection --
     ax = axes[0, 0]
@@ -276,8 +202,6 @@ def main():
     ax.set_aspect('equal'); ax.grid(True)
     ax.set_xlabel('X [m]'); ax.set_ylabel('Y [m]')
     ax.set_title(f'Initial Deflection ({lin_results["max_displacement"]*1e3:.3f} mm)')
-
-    tick("subplot [0,0] initial deflection")
 
     # -- Top-right: Initial stress --
     ax = axes[0, 1]
@@ -292,8 +216,6 @@ def main():
     max_init = np.nanmax(init_stress_mpa)
     ax.set_title(f'Initial Stress ({max_init:.1f} MPa, FOS: {nl_stress["FOS"]["min_FOS"]:.2f})')
 
-    tick("subplot [0,1] initial stress")
-
     # -- Bottom-left: Optimised deflection --
     ax = axes[1, 0]
     draw_beams_batch(ax, optimized_geom.nodes, optimized_geom.connectivity,
@@ -304,8 +226,6 @@ def main():
     ax.set_aspect('equal'); ax.grid(True)
     ax.set_xlabel('X [m]'); ax.set_ylabel('Y [m]')
     ax.set_title(f'Optimised Deflection ({opt_final["max_displacement"]*1e3:.3f} mm)')
-
-    tick("subplot [1,0] optimised deflection")
 
     # -- Bottom-right: Optimised stress --
     ax = axes[1, 1]
@@ -320,11 +240,7 @@ def main():
     max_opt = np.nanmax(opt_stress_mpa)
     ax.set_title(f'Optimised Stress ({max_opt:.1f} MPa, FOS: {opt_stress["FOS"]["min_FOS"]:.2f})')
 
-    tick("subplot [1,1] optimised stress")
-
     plt.tight_layout()
-
-    tick("tight_layout")
 
     # ===== FIGURE: Exported profile =====
     if profile['num_loops'] > 0:
@@ -342,13 +258,7 @@ def main():
         ax2.set_title('Exported Profile — Smoothed Spline Loops')
         plt.tight_layout()
 
-    tick("profile figure")
-
     plt.show()
-
-    tick("plt.show() returned")
-
-    print_timings()
 
 
 if __name__ == '__main__':
