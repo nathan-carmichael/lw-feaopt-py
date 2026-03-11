@@ -58,7 +58,7 @@ lw-feaopt-py/
 │   └── demo_truss.py
 │
 ├── profiles/
-│   └── .gitkeep
+│   └── About profiles
 │
 └── docs/
     ├── main.tex
